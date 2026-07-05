@@ -1,0 +1,7 @@
+seuil: 5
+
+log_file: "auth.log"
+
+comment_tag: "J8"
+
+action: "dry-run"

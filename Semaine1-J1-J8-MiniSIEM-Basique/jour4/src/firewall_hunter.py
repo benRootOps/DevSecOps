@@ -1,7 +1,15 @@
 import re
 import ipaddress
+import logging
 from pathlib import Path
 from collections import Counter
+
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+
 
 def is_public(ip: str) -> bool:
     try:
@@ -27,10 +35,10 @@ with p.open('r') as f:
                 if port in ports_cibles and is_public(ip): # Filtre port + IP publique
                     counts[ip] += 1
 
-print("--- Top Scanners ---")
+logging.info("--- Top Scanners ---")
 for ip, count in counts.most_common(10):
-    print(f"{ip}: {count} tentatives")
+    logging.info(f"{ip}: {count} tentatives")
 
-print("\n--- Règles iptables à appliquer ---")
+logging.info("\n--- Règles iptables à appliquer ---")
 for ip in counts:
-    print(f"iptables -A INPUT -s {ip} -j DROP")
+    logging.info(f"iptables -A INPUT -s {ip} -j DROP")

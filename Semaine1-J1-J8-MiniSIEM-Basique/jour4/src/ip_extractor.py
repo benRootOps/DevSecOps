@@ -47,7 +47,7 @@ def iplist(args):
 
     logging.info(f"\nIP publiques uniques trouvées [{len(counts)}] :")
     for ip in sorted(counts):
-        logging.info(ip)
+        logging.info(f"{ip}")
 
 ip_list = sub.add_parser("iplist", help="Liste les IP en échec SSH")
 ip_list.add_argument("--path", required=True, help="Chemin du fichier log, ex: /var/log/auth.log")

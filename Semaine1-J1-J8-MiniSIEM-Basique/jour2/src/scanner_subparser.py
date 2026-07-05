@@ -1,40 +1,72 @@
 import subprocess
 import argparse
+import logging
+
+
+#configuration du logging
+
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        #on ne vas pas afficher dans le terminal
+        logging.FileHandler("audit.log")
+    ]
+)
+
 
 
 def scan(arg):
+    logging.info(f"Scan de {arg.cible} démarrer")
     result = subprocess.run(
         ["nmap", "-p", arg.port, "-sV", "-O", arg.cible],
         capture_output=True, text=True
     )
-    print(result.stdout)
+    logging.info(result.stdout)
     if result.returncode != 0:
-        print("Erreur 1 :", result.stderr)
+        logging.error("Erreur 1 :", result.stderr)
+    else:
+        logging.info("Terminer avec succès")
 
 
 def ping(arg):
+    logging.info(f"Ping de {arg.cible} démarrer")
+
     result = subprocess.run(
         ["ping", "-c", arg.count, arg.cible],
         capture_output=True, text=True
     )
-    print(result.stdout)
+    logging.info(result.stdout)
     if result.returncode != 0:
-        print("Erreur 2 :", result.stderr)
+        logging.error("Erreur 2 :", result.stderr)
+    else:
+        logging.info("Terminer avec succès")
+
 
 def info(arg):
+    logging.info(f"Affichage des info du system")
+
     result=subprocess.run(["whoami"],
 	 capture_output=True,text=True
     ) 
-    print(result.stdout)
+    logging.info(result.stdout)
     if result.returncode != 0:
-        print("Erreur 3 :", result.stderr)
+        logging.error("Erreur 3 :", result.stderr)
+    else:
+        logging.info("Terminer avec succès")
+
 
     result=subprocess.run(["hostname"],
          capture_output=True,text=True
      )
-    print(result.stdout)
+    logging.info(result.stdout)
     if result.returncode != 0:
-        print("Erreur 3 :", result.stderr)
+        logging.error("Erreur 3 :", result.stderr)
+    else:
+        logging.info("Terminer avec succès")
+
+
 
 parser = argparse.ArgumentParser(description="Outil de sécurité")
 subpaser = parser.add_subparsers(dest="commande")
@@ -51,7 +83,7 @@ ping_parser.set_defaults(func=ping)  # lie la commande à la fonction
 
 info_parser=subpaser.add_parser("info",help="Affichez les information de la machine")
 info_parser.set_defaults(func=info)
-arg = parser.parse_args()
+arg = parser.parse_args() 
 
 if arg.commande is None:
     parser.print_help()

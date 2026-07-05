@@ -40,6 +40,6 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fail2Ban Mini SIEM")
-    parser.add_argument("--auth", default="logs.txt", required=True, help="Chemin du fichier auth.log")
+    parser.add_argument("--auth", required=True, help="Chemin du fichier auth.log")
     args = parser.parse_args()
     main(args)

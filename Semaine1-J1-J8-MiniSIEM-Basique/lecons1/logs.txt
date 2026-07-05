@@ -1,0 +1,10 @@
+2026-06-25 17:53:51,954 - INFO - Affichage des info du system
+2026-06-25 17:53:52,001 - INFO - Terminer avec succ�s
+2026-06-25 17:53:52,042 - INFO - Terminer avec succ�s
+2026-06-25 18:28:03,285 - INFO - Affichage des info du system
+2026-06-25 18:28:03,349 - INFO - mjb\hp
+
+2026-06-25 18:28:03,350 - INFO - Terminer avesc succ�s
+2026-06-25 18:28:03,413 - INFO - MJB
+
+2026-06-25 18:28:03,413 - INFO - Terminer avec succ�s

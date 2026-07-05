@@ -1,7 +1,15 @@
 import argparse
 from pathlib import Path
-import ipaddress, re
+import ipaddress, re,logging
 from collections import Counter # Pour compter
+
+
+
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
 def is_public(ip: str) -> bool:
     try:
@@ -37,15 +45,15 @@ def main(args):
     
     confirme = ssh_ips & fw_ips # MAGIE: Intersection des 2 sets
     
-    print("--- Corrélation Terminée ---")
+    logging.info("--- Corrélation Terminée ---")
     if not confirme:
-        print("Aucun attaquant confirmé.")
+        logging.info("Aucun attaquant confirmé.")
     for ip in confirme:
-        print(f"{ip}: Présent dans SSH + Firewall. Menace Confirmée.")
+        logging.warning(f"{ip}: Présent dans SSH + Firewall. Menace Confirmée.")
     
-    print("\n--- Règles PRIORITAIRE iptables ---")
+    logging.warning("\n--- Règles PRIORITAIRE iptables ---")
     for ip in confirme:
-        print(f"iptables -A INPUT -s {ip} -j DROP -m comment --comment \"SIEM CORRELATION\"")
+        logging.info(f"iptables -A INPUT -s {ip} -j DROP -m comment --comment \"SIEM CORRELATION\"")
         
 
 if __name__ == "__main__":

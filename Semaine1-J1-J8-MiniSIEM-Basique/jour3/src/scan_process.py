@@ -18,7 +18,7 @@ def pid(args):
     
     ps = subprocess.run(['ps', '-p', str(pid_val), '-o', 'user,cmd'], capture_output=True, text=True)
     logging.info(f"Port {args.port} -> PID {pid_val}")
-    print(ps.stdout)
+    logging.info(ps.stdout)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

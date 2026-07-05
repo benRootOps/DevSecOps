@@ -1,4 +1,4 @@
-DevSecOps 56 Days Challenge
+9DevSecOps 56 Days Challenge
 
 **Objectif : Devenir Junior DevSecOps Engineer en 8 semaines | 4h/j, 7j/7**
 
@@ -7,7 +7,7 @@ L’idée : Passer de zéro à "embauchable" avec un portfolio AWS + Sécurité 
 
 **Auteur** : MBA Joseph Benjamin  
 **Localisation** : Yaoundé, Cameroun  
-**Stack Cible** : Kali Linux, AWS, Docker, Kubernetes, Terraform, GitHub Actions
+**Stack Cible** : Ubuntu Server, AWS, Docker, Kubernetes, Terraform, GitHub Actions
 
 ---
 
@@ -27,12 +27,11 @@ L’idée : Passer de zéro à "embauchable" avec un portfolio AWS + Sécurité 
 
 Chaque jour est un dossier autonome pour garantir une progression traçable.
 
-Jour-01/
+SEMAINExx/
+Jour-xx/
 ├── http://README.md       # Récap de la journée : Objectif, Ce qui a été fait, Blocages, Leçons
 ├── src/            # Code, scripts Bash, fichiers .tf, .yaml du jour
-└── assets/         # Captures d’écran, diagrammes d’architecture, preuves. Optionnel Semaine 1-2
-
-**Convention de nommage** : `Jour-XX` sur 2 chiffres. Ex: `Jour-01`, `Jour-12`
+└── assets/         # Captures d’écran, diagrammes d’architecture, preuves.
 
 ---
 
@@ -51,7 +50,7 @@ Jour-01/
 
 | Jour | Date | Thème | Statut | Lien |
 | --- | --- | --- | --- | --- |
-| Jour-01 | 26/06/2026 | Setup Environnement Kali + Docker | ⏳ En cours | [Voir](./Jour-01) |
+| Jour-01 | 26/06/2026 | Setup Environnement Ubuntu serveur,VS Code en SSH , Docker | ⏳ En cours | [Voir](./Jour-01) |
 | Jour-02 | 27/06/2026 | ... | ❌ À venir | [Voir](./Jour-02) |
 | ... | ... | ... | ❌ À venir | ... |
 

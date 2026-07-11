@@ -1,0 +1,37 @@
+[Unit]
+Description=SIEM - Détection brute-force SSH (auth.log monitor)
+After=network.target rsyslog.service
+Wants=network.target
+
+[Service]
+Type=simple
+# Doit tourner en root : lecture /var/log/auth.log + modification iptables
+User=root
+Group=root
+
+# Adapte ces deux chemins à ton installation réelle
+WorkingDirectory=/home/mjb/DervSecOps/Semaine2-J9-J15-SIEM-ELK-Ready
+ExecStart=/usr/bin/python3 /home/mjb/DervSecOps/Semaine2-J9-J15-SIEM-ELK-Ready/siem_j10.py --config /home/mjb/DervSecOps/Semaine2-J9-J15-SIEM-ELK-Ready/config.yaml
+
+# Redémarrage automatique en cas de crash, mais pas en boucle infinie si ça crash direct
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Arrêt propre : laisse le temps au script de terminer la boucle proprement (SIGTERM géré)
+TimeoutStopSec=10
+KillSignal=SIGTERM
+
+# Sécurité de base (peut être durci davantage selon besoin)
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=false
+
+# Logs redirigés vers journald (consultables avec: journalctl -u mini-siem -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mini-siem
+
+[Install]
+WantedBy=multi-user.target

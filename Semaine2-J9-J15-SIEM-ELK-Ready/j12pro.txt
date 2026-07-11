@@ -1,0 +1,203 @@
+import re
+import subprocess
+import json
+import time
+import logging
+import signal
+import sys
+from collections import defaultdict
+from pathlib import Path
+from datetime import datetime
+
+from siem_core import load_config, setup_logging
+from ip_public import is_public
+from comment_builder import iptables_comment
+from ban_manager import BanManager
+
+# --- Gestion propre de l'arrêt (systemd stop / Ctrl+C) ---
+_shutdown = False
+
+def _handle_signal(signum, frame):
+    global _shutdown
+    _shutdown = True
+
+signal.signal(signal.SIGTERM, _handle_signal)
+signal.signal(signal.SIGINT, _handle_signal)
+
+
+def start_tail(log_file, logger):
+    """Lance tail -F et renvoie le process. Isolé pour pouvoir le relancer facilement."""
+    proc = subprocess.Popen(
+        ["tail", "-F", "-n", "0", log_file],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1
+    )
+    logger.info(f"[TAIL] Démarré (PID={proc.pid}) sur {log_file}")
+    return proc
+
+
+def purge_inactive_ips(fails, window_sec, logger, max_age_factor=3):
+    """Nettoie les IP inactives depuis longtemps pour éviter une fuite mémoire lente."""
+    now = time.time()
+    max_age = window_sec * max_age_factor
+    to_delete = [ip for ip, timestamps in fails.items()
+                 if not timestamps or now - timestamps[-1] > max_age]
+    for ip in to_delete:
+        del fails[ip]
+    if to_delete:
+        logger.debug(f"[CLEANUP] {len(to_delete)} IP purgées de la mémoire (inactives)")
+
+
+def main():
+    config = load_config()
+    logger = setup_logging()
+
+    fails = defaultdict(list)
+
+    PATTERNS = [re.compile(p) for p in config.get('FAIL_PATTERNS', [])]
+
+    SEUIL = config['SEUIL']
+    LOG_FILE = config['LOG_FILE']
+    ACTION = config['ACTION']
+    WHITELIST = set(config.get('WHITELIST', []))
+    JSON_OUT = Path(config['OUTPUT_JSON'])
+    TAG = config['COMMENT_TAG']
+    WINDOW_SEC = config.get('WINDOW_SEC', 300)
+
+    # Paramètres de robustesse (avec défauts si absents du YAML)
+    RECONNECT_DELAY_SEC = config.get('RECONNECT_DELAY_SEC', 5)
+    MAX_RECONNECT_DELAY_SEC = config.get('MAX_RECONNECT_DELAY_SEC', 60)
+    CLEANUP_INTERVAL_SEC = config.get('CLEANUP_INTERVAL_SEC', 600)
+
+    # Paramètres du ban temporaire (TTL) via ipset
+    BAN_SET_NAME = config.get('BAN_SET_NAME', 'siem_banned_ips')
+    BAN_TTL_SEC = config.get('BAN_TTL_SEC', 3600)  # 1h par défaut
+
+    JSON_OUT.parent.mkdir(parents=True, exist_ok=True)
+
+    ban_manager = BanManager(BAN_SET_NAME, BAN_TTL_SEC, logger)
+    if ACTION == "block":
+        # Ne prépare l'ipset/la règle iptables que si on est réellement en mode actif.
+        # En mode "alert" (dry-run), inutile de toucher au firewall.
+        ban_manager.setup()
+
+    logger.info(
+        f"[J13 PROD] {len(PATTERNS)} règles | SEUIL={SEUIL} | FENETRE={WINDOW_SEC}s "
+        f"| ACTION={ACTION} | WHITELIST={sorted(WHITELIST)} | BAN_TTL={BAN_TTL_SEC}s"
+    )
+
+    reconnect_delay = RECONNECT_DELAY_SEC
+    last_cleanup = time.time()
+    proc = None
+
+    # --- Boucle de supervision : relance tail -F si jamais il meurt ---
+    while not _shutdown:
+        try:
+            proc = start_tail(LOG_FILE, logger)
+            reconnect_delay = RECONNECT_DELAY_SEC  # reset du backoff après connexion réussie
+
+            for line in proc.stdout:
+                if _shutdown:
+                    break
+
+                # Purge périodique de la mémoire (IP inactives)
+                if time.time() - last_cleanup > CLEANUP_INTERVAL_SEC:
+                    purge_inactive_ips(fails, WINDOW_SEC, logger)
+                    last_cleanup = time.time()
+
+                ip = None
+                for regex in PATTERNS:
+                    if match := regex.search(line):
+                        groups = match.groups()
+                        ip = groups[1] if len(groups) == 2 else groups[0]
+                        break
+
+                if not ip:
+                    continue
+
+                try:
+                    if not is_public(ip):
+                        continue
+                except ValueError:
+                    logger.warning(f"[IP INVALIDE] '{ip}' ignorée (regex probablement fautive)")
+                    continue
+
+                now = time.time()
+                fails[ip] = [t for t in fails[ip] if now - t < WINDOW_SEC]
+                fails[ip].append(now)
+                count = len(fails[ip])
+
+                # On interroge l'ipset plutôt qu'un set() en mémoire : ainsi, une fois le
+                # TTL expiré côté noyau, l'IP redevient naturellement bannissable si elle
+                # recommence à attaquer, sans logique de nettoyage supplémentaire à gérer ici.
+                already_banned = ACTION == "block" and ban_manager.is_banned(ip)
+
+                if count >= SEUIL and not already_banned:
+                    if ip in WHITELIST:
+                        logger.warning(f"[SAFE] {ip} est en WHITELIST. Pas de ban. Count={count}")
+                        continue
+
+                    ts_iso = datetime.now().isoformat()
+                    comment = iptables_comment(TAG, LOG_FILE, count)
+
+                    if ACTION == "block":
+                        logger.critical(
+                            f"[BLOCAGE] {ip} -> {count} fails. Ban ipset (TTL={BAN_TTL_SEC}s)"
+                        )
+                        action_taken = "DROP" if ban_manager.ban(ip, BAN_TTL_SEC) else "FAIL_BAN"
+                    else:
+                        logger.warning(f"[ALERTE] {ip} -> {count} fails | DRY-RUN (pas de ban réel)")
+                        action_taken = "DRY_RUN"
+
+                    alert = {
+                        "timestamp": ts_iso, "rule_id": TAG, "event_type": "brute_force_ssh",
+                        "src_ip": ip, "count": count, "action": action_taken,
+                        "comment": comment, "log_source": LOG_FILE,
+                        "ban_ttl_sec": BAN_TTL_SEC if ACTION == "block" else None
+                    }
+                    try:
+                        with JSON_OUT.open('a') as jsonf:
+                            jsonf.write(json.dumps(alert) + "\n")
+                    except Exception as e:
+                        logger.error(f"[ERREUR ECRITURE JSON] {e}")
+
+                    fails[ip].clear()
+
+            # Si on sort de la boucle for sans _shutdown, c'est que tail.stdout s'est fermé
+            if not _shutdown:
+                exit_code = proc.poll()
+                stderr_out = proc.stderr.read() if proc.stderr else ""
+                logger.warning(
+                    f"[TAIL MORT] code={exit_code} stderr='{stderr_out.strip()}' "
+                    f"-> reconnexion dans {reconnect_delay}s"
+                )
+
+        except FileNotFoundError:
+            logger.error(f"[ERREUR] Commande 'tail' introuvable ou fichier {LOG_FILE} inaccessible")
+        except Exception:
+            logger.exception("[CRASH] Erreur inattendue dans la boucle de supervision")
+        finally:
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+        if _shutdown:
+            break
+
+        # Backoff exponentiel plafonné pour éviter de spammer les reconnexions
+        time.sleep(reconnect_delay)
+        reconnect_delay = min(reconnect_delay * 2, MAX_RECONNECT_DELAY_SEC)
+
+    logger.info("[ARRET] Signal reçu, arrêt propre du service")
+    if proc and proc.poll() is None:
+        proc.terminate()
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

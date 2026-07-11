@@ -123,8 +123,8 @@ def main():
                 continue
 
             try:
-                #if not is_public(ip):
-                    #continue
+                if not is_public(ip):
+                    continue
                     print("On décommente en PROD")
             except ValueError:
                 logger.warning(f"[IP INVALIDE] '{ip}' ignorée (regex probablement fautive)")

@@ -1,0 +1,20 @@
+{
+  "10.180.66.239": {
+    "banned_at": 1783564501.5597773,
+    "expires_at": 1783566301.5597773,
+    "rule_args": [
+      "iptables",
+      "-A",
+      "INPUT",
+      "-s",
+      "10.180.66.239",
+      "-j",
+      "DROP",
+      "-m",
+      "comment",
+      "--comment",
+      "J9-J15 | SRC:auth.log | TS:2026-07-09 02:35 | CNT:5"
+    ],
+    "count": 5
+  }
+}

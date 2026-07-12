@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-
+from lib.logrotate import rotate_if_full
 
 def build_ban_rule_args(ip, comment):
     return ["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP",
@@ -29,14 +29,15 @@ def to_unban_args(ban_rule_args):
 class BanManager:
     def __init__(self, logger, rate_limiter, use_sudo=True,
                  ban_duration_sec=1800, unban_check_interval_sec=30,
-                 state_file="/opt/siem/var/banned_ips.json",
-                 on_event=None):
+                 state_file="/opt/siem/var/banned_ips.jsonl",
+                 on_event=None,config=None):
         """
         on_event: callback(dict) optionnel, appelé pour chaque événement
         ban/unban (ex: écrire une alerte JSONL). Doit être thread-safe si
         fourni, car appelé depuis le thread de fond.
         """
         self.logger = logger
+        self.config=config
         self.rate_limiter = rate_limiter
         self.use_sudo = use_sudo
         self.ban_duration_sec = ban_duration_sec
@@ -64,15 +65,23 @@ class BanManager:
             return {}
 
     def _save_state(self):
-        """Doit être appelée avec self._lock déjà acquis."""
+        """Doit être appelée AVEC self._lock déjà acquis."""
+        backup_dir = self.config['BACKUP_BANNED_IPS']
+        rotate_if_full(self.state_file, backup_dir, max_mb=0.0003) # <-- Force seuil test
+        
+        if not self.state_file.exists(): 
+            self.banned_ips = {} # Reset RAM si rotate
+        
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.state_file.with_suffix(".tmp")
+            #  On copie sous lock pour éviter RuntimeError
+            data_to_dump = dict(self.banned_ips) 
             with tmp.open("w") as f:
-                json.dump(self.banned_ips, f, indent=2)
+                json.dump(data_to_dump, f, indent=2) #  Dump la copie
             tmp.replace(self.state_file)
         except Exception as e:
-            self.logger.error(f"[STATE] échec écriture {self.state_file}: {e}")
+            self.logger.critical(f"[STATE] échec écriture {self.state_file}: {e}") # <-- critical pour voir
 
     # ---------- iptables ----------
 

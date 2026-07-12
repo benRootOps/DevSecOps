@@ -16,13 +16,18 @@ ACTION: "block"
 
 WINDOW_SEC: 300
 
+#:::::::::::::::::::::::::::::::::::::::::::::::::::
+#Config des différent path du system
 OUTPUT_JSON: "/opt/siem/var/alerts.jsonl"
+BAN_STATE_FILE: /opt/siem/var/banned_ips.jsonl
+BACKUP_ALERT: "/opt/siem/var/backup/alert"
+BACKUP_BANNED_IPS: "/opt/siem/var/backup/banned"
 
+#:::::::::::::::::::::::::::::::::::::::::::::::::::::
 BAN_DURATION_SEC: 1800 # durée du ban avant unban auto
 UNBAN_CHECK_INTERVAL_SEC: 30 # fréquence de vérification (thread de fond)
 RATE_LIMIT_MAX_ACTIONS: 10 # nb max d'actions ban/unban...
 RATE_LIMIT_WINDOW_SEC: 60 # ...par fenêtre de X secondes
-BAN_STATE_FILE: /opt/siem/var/banned_ips.jsonl
 RESET_BAN_ON_REPEAT: true # prolonge le ban si l'IP retente pendant qu'elle est bannie
 
 WHITELIST:

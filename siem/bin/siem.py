@@ -5,24 +5,7 @@ Détection brute-force SSH avec ban/unban automatique et rate limiting.
 Fichier d'orchestration principal — la logique de ban/unban vit dans
 ban_manager.py (BanManager, avec son propre thread de fond pour les
 unbans), le rate limiting dans rate_limiter.py (RateLimiter).
-
-Destinés à /opt/siem/ en prod :
-    /opt/siem/bin/siem.py
-    /opt/siem/lib/ban_manager.py
-    /opt/siem/lib/rate_limiter.py
-    /opt/siem/lib/__init__.py   (vide, fait de lib un package)
-
-Config générale attendue en YAML, chargée via siem_core.load_config().
-Clés supplémentaires utilisées ici (optionnelles, défauts ci-dessous) :
-
-    BAN_DURATION_SEC: 1800           # durée du ban avant unban auto
-    UNBAN_CHECK_INTERVAL_SEC: 30      # fréquence de vérification (thread de fond)
-    RATE_LIMIT_MAX_ACTIONS: 10        # nb max d'actions ban/unban...
-    RATE_LIMIT_WINDOW_SEC: 60         # ...par fenêtre de X secondes
-    BAN_STATE_FILE: /opt/siem/state/banned_ips.json
-    RESET_BAN_ON_REPEAT: true         # prolonge le ban si l'IP retente pendant qu'elle est bannie
 """
-
 import re
 import subprocess
 import json
@@ -37,9 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib.siem_core import load_config, setup_logging
 from lib.ip_public import is_public
 from lib.comment_builder import iptables_comment
-
 from lib.rate_limit import RateLimiter
 from lib.ban_manager import BanManager
+from lib.logrotate import rotate_if_full
 
 
 def main():
@@ -48,8 +31,9 @@ def main():
 
     fails = defaultdict(list)
 
-    PATTERNS = [re.compile(p) for p in config.get('FAIL_PATTERNS', [])]
 
+    """ON charge toute les config"""
+    PATTERNS = [re.compile(p) for p in config.get('FAIL_PATTERNS', [])]
     SEUIL = config['SEUIL']
     LOG_FILE = config['LOG_FILE']
     ACTION = config['ACTION']
@@ -58,21 +42,22 @@ def main():
     TAG = config['COMMENT_TAG']
     WINDOW_SEC = config.get('WINDOW_SEC', 300)
     USE_SUDO = config.get('USE_SUDO', True)
-
     BAN_DURATION_SEC = config.get('BAN_DURATION_SEC', 1800)
     UNBAN_CHECK_INTERVAL_SEC = config.get('UNBAN_CHECK_INTERVAL_SEC', 30)
     RATE_LIMIT_MAX_ACTIONS = config.get('RATE_LIMIT_MAX_ACTIONS', 10)
     RATE_LIMIT_WINDOW_SEC = config.get('RATE_LIMIT_WINDOW_SEC', 60)
     RESET_BAN_ON_REPEAT = config.get('RESET_BAN_ON_REPEAT', True)
-    STATE_FILE = config.get('BAN_STATE_FILE', '/opt/siem/state/banned_ips.json')
-
+    STATE_FILE = config.get('BAN_STATE_FILE')
     JSON_OUT.parent.mkdir(parents=True, exist_ok=True)
+    
+
 
     # Écriture JSONL protégée par lock : appelée depuis le thread principal
     # (détections) ET depuis le thread de fond du BanManager (unbans).
     alert_lock = threading.Lock()
 
     def write_alert(fields):
+        rotate_if_full(JSON_OUT,config['BACKUP_ALERT'])
         alert = {
             "timestamp": datetime.now().isoformat(),
             "rule_id": TAG,
@@ -92,6 +77,7 @@ def main():
         unban_check_interval_sec=UNBAN_CHECK_INTERVAL_SEC,
         state_file=STATE_FILE,
         on_event=write_alert,
+         config=config,
     )
 
     logger.info(
@@ -123,8 +109,8 @@ def main():
                 continue
 
             try:
-                if not is_public(ip):
-                    continue
+                #if not is_public(ip):
+                    #continue
                     print("On décommente en PROD")
             except ValueError:
                 logger.warning(f"[IP INVALIDE] '{ip}' ignorée (regex probablement fautive)")

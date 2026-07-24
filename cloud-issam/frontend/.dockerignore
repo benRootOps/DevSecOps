@@ -1,0 +1,26 @@
+# Dépendances
+# node_modules
+# npm-debug.log
+# yarn-error.log
+# pnpm-debug.log
+
+# Fichiers d'environnement et clés
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+secrets/
+config/keys/
+
+# Git et IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Build/OS
+dist
+build
+.DS_Store

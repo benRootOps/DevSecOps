@@ -1,0 +1,39 @@
+#:::::::::::::::::::::::::::::::::::
+# WEB - Nouveau bloc pour Openresty JSON
+#:::::::::::::::::::
+SEUIL: 10
+BAN_CHAIN: DOCKER-USER
+WINDOW_SEC: 60
+LOG_FILE: "/logs/openresty/access.log"
+# On capture l'IP avec le 1er groupe ()
+FAIL_PATTERNS:
+  # Bruteforce 401/403
+  - '(?=.*"remote_ip":\s*"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)")(?=.*"status":\s*40[13])'
+
+  # Erreur 500 = exploit
+  - '(?=.*"remote_ip":\s*"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)")(?=.*"status":\s*500)'
+
+  # Path Traversal
+  - '(?=.*"remote_ip":\s*"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)")(?=.*"url":\s*".*\.\..*")'
+
+  # SQLi
+  - '(?=.*"remote_ip":\s*"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)")(?=.*"url":\s*".*union.*select.*")'
+
+  # XSS
+  - '(?=.*"remote_ip":\s*"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)")(?=.*"url":\s*".*<script.*")'
+
+  # Test: Ban sur 10x /api/login même en 404
+  - '(?=.*"remote_ip":\s*"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)")(?=.*"url":\s*"/api/login")'
+
+ACTION: "block"
+COMMENT_TAG: "WEB-ATTACK"
+OUTPUT_JSON: "/app/var/alerts_web.jsonl"
+BAN_STATE_FILE: /app/var/banned_web.json
+BACKUP_ALERT: "/app/var/backup/alert_web"
+BACKUP_BANNED_IPS: "/app/var/backup/banned_web"
+BAN_DURATION_SEC: 1800
+WHITELIST:
+  - "127.0.0.1"
+  - "10.180.66.239"
+  - "192.168.238.1" # <- ajoute ça temporairement
+  - "172.20.0.1" # <- IP du container nginx aussi

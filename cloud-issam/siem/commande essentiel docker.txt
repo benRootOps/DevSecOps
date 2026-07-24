@@ -1,0 +1,12 @@
+
+### *TABLEAU L3 : LA "BOITE À OUTILS DOCKER" DU SOC*
+
+**COMMANDES À RETENIR = MUSCLE MEMORY**	**À QUOI ÇA SERT**	**ANALOGIE**
+**`docker build -t nom:v1 .`**	`Fabriquer la valise`	`Make` / Compiler
+**`docker run -p 8000:8000 nom:v1`**	`Lancer la valise`	`./app`
+**`docker ps`**	`Voir les valises allumées`	`top`
+**`docker stop <id>`**	`Éteindre une valise`	`kill`
+**`docker logs <id> -f`**	`tail -f du container`	`journalctl -f`
+**`docker exec -it <id> bash`**	`Entrer DANS la valise`	`ssh`
+*RÈGLE* : 6 commandes. C’est tout. Si tu sais ça, t’es opérationnel à 90%.
+

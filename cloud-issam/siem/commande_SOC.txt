@@ -1,0 +1,119 @@
+
+::::::::::::::::::::::::::::::::::
+::METTRE EN PLACE LE SERVICE   :::
+::::::::::::::::::::::::::::::::::
+# 1. Copie le service dans Systemd
+sudo cp mini-siem.service /etc/systemd/system/
+
+# 2. Reload + Enable + Start
+sudo systemctl daemon-reload
+sudo systemctl enable --now mini-siem.service
+
+# 3. Vérification SOC
+sudo systemctl status mini-siem.service
+sudo journalctl -u mini-siem.service -f
+
+
+::::::::::::::::::::::::::::::::::::
+:: COMMANDES SOC A CONNETTRE     :::
+::::::::::::::::::::::::::::::::::::
+
+### *LES 7 COMMANDES SYSTEMD = CARTE D’IDENTITÉ SOC L3* 
+
+
+#### *1. ÉTAT DU SERVICE = "Il vit ou il est mort?"*
+sudo systemctl status mini-siem.service
+*À regarder* : `Active: active (running)` = OK. `failed` = KO. `Main PID` = Son numéro.
+
+#### *2. LOGS EN LIVE = "Qu’est-ce qu’il dit maintenant?"*
+sudo journalctl -u mini-siem.service -f
+`-f` = `follow` = Tail -f. `Ctrl+C` pour quitter. C’est ton SIEM en live.
+
+#### *3. LOGS HISTORIQUE = "Qu’est-ce qu’il a dit depuis 10min?"*
+sudo journalctl -u mini-siem.service --since "10 min ago"
+Remplace par `1h ago`, `today`, `yesterday`. Inestimable pour l’investigation.
+
+#### *4. DÉMARRER / ARRÊTER / REDÉMARRER = "Télécommande"*
+sudo systemctl start mini-siem.service    # Allumer
+sudo systemctl stop mini-siem.service     # Éteindre propre
+sudo systemctl restart mini-siem.service  # Redémarrer après modif code
+#### *5. BOOT = "Il se lance au démarrage du serveur?"*
+sudo systemctl enable mini-siem.service   # OUI, lance au boot
+sudo systemctl disable mini-siem.service  # NON, ne lance pas au boot
+`enable --now` = Les 2 en 1.
+
+#### *6. ERREURS RAPIDES = "Pourquoi il a crash?"*
+sudo systemctl status mini-siem.service --no-pager -n 20
+`-n 20` = 20 dernières lignes d’erreur. C’est 90% du debug SOC.
+
+#### *7. RECHARGER APRÈS MODIF `.service` = OBLIGATOIRE*
+sudo systemctl daemon-reload 
+sudo systemctl restart mini-siem.service
+Si je touches `mini-siem.service`, Linux le sait pas. Faut `daemon-reload`.
+
+---
+
+*RÈGLE SOC* : `status` + `journalctl -f` = 80% de ton taf Blue Team.
+
+*ET POUR LE JSON* : `tail -f alerts.jsonl` dans un autre terminal. 
+Terminal 1 = Logs Systemd. Terminal 2 = Logs SIEM.
+
+
+
+
+
+
+
+
+
+
+
+
+
+import time, subprocess, re, yaml, sys
+from collections import defaultdict
+from pathlib import Path
+
+# --- CONFIG ---
+CFG = yaml.safe_load(Path("config.yaml").read_text())
+THRESHOLD = int(CFG.get("THRESHOLD", 5))
+LOG_FILE=Path(CFG["LOG_FILE"])
+ACTION = CFG.get("ACTION", "alert")
+PATTERNS = [re.compile(p) for p in CFG.get("FAIL_PATTERNS", [])] # Compile toutes les règles
+
+# --- STATE ---
+fails = defaultdict(list) # {ip: [timestamps]}
+
+def detect(line: str):
+    """Teste toutes les règles. Renvoie l'IP si match."""
+    for regex in PATTERNS:
+        m = regex.search(line)
+        if m:
+            ip = m.group(2) if len(m.groups()) == 2 else m.group(1) # Prend IP dans groupe 1 ou 2
+            return ip
+    return None
+
+def alert(ip, count):
+    msg = f"[ALERTE] {ip} -> {count} fails | ACTION={ACTION}"
+    print(msg, flush=True)
+    if ACTION == "ban":
+        subprocess.run(["sudo", "iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"])
+
+# --- MAIN LOOP ---
+def main():
+    print(f"[J12 RULESET] {len(PATTERNS)} règles chargées | SEUIL={THRESHOLD}", flush=True)
+    proc = subprocess.Popen(["tail", "-F", LOG_FILE], stdout=subprocess.PIPE, text=True, bufsize=1)
+    for line in proc.stdout:
+        ip = detect(line)
+        if ip:
+            now = time.time()
+            fails[ip] = [t for t in fails[ip] if now - t < 300] # Fenêtre 5min
+            fails[ip].append(now)
+            if len(fails[ip]) >= THRESHOLD:
+                alert(ip, len(fails[ip]))
+                fails[ip].clear()
+
+if __name__ == "__main__":
+    main()
+
+

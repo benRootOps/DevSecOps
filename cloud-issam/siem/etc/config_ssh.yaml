@@ -1,0 +1,34 @@
+#:::::::::::::::::::
+# SSH - Ta config actuelle
+#:::::::::::::::::::
+
+SEUIL: 5
+BAN_CHAIN: INPUT
+WINDOW_SEC: 300
+LOG_FILE: /logs/auth/auth.log
+FAIL_PATTERNS:
+  - 'Failed password for (?:invalid user )?(\S+) from (\d+\.\d+\.\d+\.\d+)'
+  - 'Failed password for root from (\d+\.\d+\.\d+\.\d+)'
+  - 'PAM.* authentication failure.*rhost=(\d+\.\d+\.\d+\.\d+)'
+ACTION: "block"
+COMMENT_TAG: "SSH-BRUTEFORCE"
+
+#:::::::::::::::::::::::::::::::::::::::::::::::::::
+# Config Global System
+#:::::::::::::::::::::::::::::::::::
+OUTPUT_JSON: "/app/var/alerts.jsonl"
+BAN_STATE_FILE: /app/var/banned_ips.json
+BACKUP_ALERT: "/app/var/backup/alert_ssh"
+BACKUP_BANNED_IPS: "/app/var/backup/banned_ssh"
+
+BAN_DURATION_SEC: 1800
+UNBAN_CHECK_INTERVAL_SEC: 30
+RATE_LIMIT_MAX_ACTIONS: 10
+RATE_LIMIT_WINDOW_SEC: 60
+RESET_BAN_ON_REPEAT: true
+
+WHITELIST:
+  - "127.0.0.1"
+  - "192.168.238.1"
+    # <- ajoute ça temporairement
+  - "172.20.0.1" # <- IP du container nginx aussi

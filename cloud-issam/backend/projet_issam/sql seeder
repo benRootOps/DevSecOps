@@ -1,0 +1,93 @@
+-- =========================================================
+-- SEED DE TEST - cloud_issam
+-- Mot de passe pour TOUS les comptes ci-dessous : password123
+-- =========================================================
+
+SET FOREIGN_KEY_CHECKS=0;
+
+-- --------------------------------------------------------
+-- Référentiel académique
+-- --------------------------------------------------------
+INSERT INTO `filieres` (`id`, `nom`, `code`, `description`, `created_at`, `updated_at`) VALUES
+(1, 'Informatique', 'INFO', 'Filière Informatique', NOW(), NOW());
+
+INSERT INTO `niveaux` (`id`, `nom`, `description`, `ordre`, `created_at`, `updated_at`) VALUES
+(1, 'L1', 'Licence 1', 1, NOW(), NOW()),
+(2, 'L2', 'Licence 2', 2, NOW(), NOW());
+
+INSERT INTO `specialites` (`id`, `nom`, `description`, `created_at`, `updated_at`, `filiere_id`) VALUES
+(1, 'Génie Logiciel', 'BTS IGL', NOW(), NOW(), 1),
+(2, 'Réseaux Informatiques', 'BTS RI', NOW(), NOW(), 1);
+
+INSERT INTO `matieres` (`id`, `nom`, `code`, `description`, `coefficient`, `created_at`, `updated_at`, `filiere_id`, `niveau_id`) VALUES
+(1, 'Algorithmique', 'ALGO1', NULL, 3.00, NOW(), NOW(), 1, 1),
+(2, 'Base de données', 'BDD1', NULL, 3.00, NOW(), NOW(), 1, 1),
+(3, 'Réseaux', 'RES1', NULL, 2.00, NOW(), NOW(), 1, 2);
+
+INSERT INTO `matieres_specialites` (`id`, `matiere_id`, `specialite_id`) VALUES
+(1, 1, 1),
+(2, 2, 1),
+(3, 3, 2);
+
+-- --------------------------------------------------------
+-- Utilisateurs (CustomUser) — mdp = password123 pour tous
+-- --------------------------------------------------------
+INSERT INTO `app_enseignants_customuser`
+(`id`, `password`, `last_login`, `is_superuser`, `username`, `first_name`, `last_name`, `email`, `is_staff`, `is_active`, `date_joined`, `role`) VALUES
+(1, 'pbkdf2_sha256$600000$IucvJFmPupQO$0jWYR287h35yqDsBjNwzL6Wsp1UJTZdAtjYC9O6xR+M=', NULL, 1, 'admin1', 'Paul', 'Nkeng', 'admin@issam.cm', 1, 1, NOW(), 'admin'),
+(2, 'pbkdf2_sha256$600000$IucvJFmPupQO$0jWYR287h35yqDsBjNwzL6Wsp1UJTZdAtjYC9O6xR+M=', NULL, 0, 'ens1', 'Marie', 'Fotso', 'marie.fotso@issam.cm', 0, 1, NOW(), 'enseignant');
+
+-- --------------------------------------------------------
+-- Profils
+-- --------------------------------------------------------
+INSERT INTO `administrateurs` (`id`, `nom`, `prenom`, `date_naissance`, `lieu_naissance`, `is_approved`, `created_at`, `updated_at`, `user_id`) VALUES
+(1, 'Nkeng', 'Paul', '1985-03-12', 'Yaoundé', 1, NOW(), NOW(), 1);
+
+INSERT INTO `enseignants` (`id`, `nom`, `prenom`, `date_naissance`, `lieu_naissance`, `is_verified`, `created_at`, `updated_at`, `user_id`, `is_active`) VALUES
+(1, 'Fotso', 'Marie', '1990-06-20', 'Douala', 1, NOW(), NOW(), 2, 1);
+
+INSERT INTO `enseignant_matieres` (`id`, `created_at`, `enseignant_id`, `matiere_id`) VALUES
+(1, NOW(), 1, 1),
+(2, NOW(), 1, 2);
+
+INSERT INTO `enseignant_niveaux` (`id`, `created_at`, `enseignant_id`, `filiere_id`, `niveau_id`) VALUES
+(1, NOW(), 1, 1, 1);
+
+INSERT INTO `enseignant_specialites` (`id`, `created_at`, `enseignant_id`, `specialite_id`) VALUES
+(1, NOW(), 1, 1);
+
+-- --------------------------------------------------------
+-- Étudiants
+-- --------------------------------------------------------
+INSERT INTO `etudiants` (`id`, `matricule`, `nom`, `prenom`, `date_naissance`, `lieu_naissance`, `email`, `telephone`, `created_at`, `updated_at`, `filiere_id`, `niveau_id`, `specialite_id`) VALUES
+(1, 'ISSAM2025-001', 'Mballa', 'Jean', '2003-01-15', 'Yaoundé', 'jean.mballa@student.issam.cm', '677000001', NOW(), NOW(), 1, 1, 1),
+(2, 'ISSAM2025-002', 'Ateba', 'Sarah', '2003-05-22', 'Douala', 'sarah.ateba@student.issam.cm', '677000002', NOW(), NOW(), 1, 1, 1),
+(3, 'ISSAM2025-003', 'Bilong', 'Éric', '2002-11-03', 'Bafoussam', 'eric.bilong@student.issam.cm', '677000003', NOW(), NOW(), 1, 1, 2);
+
+-- --------------------------------------------------------
+-- Période de saisie active
+-- --------------------------------------------------------
+INSERT INTO `periodes_saisie` (`id`, `annee_academique`, `section`, `date_debut`, `date_fin`, `is_active`, `created_at`, `updated_at`, `ouvert_par_id`) VALUES
+(1, '2025-2026', 'S1', NOW(), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, NOW(), NOW(), 1);
+
+-- --------------------------------------------------------
+-- Notes
+-- --------------------------------------------------------
+INSERT INTO `notes` (`id`, `annee_academique`, `created_at`, `updated_at`, `enseignant_id`, `etudiant_id`, `matiere_id`, `note_cc1`, `note_cc2`, `note_sn1`, `note_sn2`) VALUES
+(1, '2025-2026', NOW(), NOW(), 1, 1, 1, 14.50, 15.00, 13.00, 16.00),
+(2, '2025-2026', NOW(), NOW(), 1, 2, 1, 10.00, 12.50, 11.00, NULL),
+(3, '2025-2026', NOW(), NOW(), 1, 1, 2, 16.00, 15.50, NULL, NULL);
+
+-- --------------------------------------------------------
+-- OTP (exemple, non lié à un compte précis)
+-- --------------------------------------------------------
+INSERT INTO `otp_verifications` (`id`, `email`, `code`, `is_used`, `expires_at`, `created_at`) VALUES
+(1, 'admin@issam.cm', 'A1B2C3', 0, DATE_ADD(NOW(), INTERVAL 10 MINUTE), NOW());
+
+SET FOREIGN_KEY_CHECKS=1;
+
+-- =========================================================
+-- Comptes de test :
+--   admin@issam.cm     / password123  (rôle admin)
+--   marie.fotso@issam.cm / password123 (rôle enseignant)
+-- =========================================================

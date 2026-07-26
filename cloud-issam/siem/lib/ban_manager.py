@@ -64,12 +64,12 @@ class BanManager:
         ban/unban (ex: écrire une alerte JSONL). Doit être thread-safe si
         fourni, car appelé depuis le thread de fond.
 
-        unban_rate_limiter: FIX — rate limiter dédié aux unbans, séparé de
-        celui des bans. Avant ce fix, les deux opérations partageaient le
-        même compteur : en cas d'attaque massive, les bans saturaient le
-        quota et les unbans expirés restaient bloqués indéfiniment, faisant
-        grossir banned_ips (et la mémoire) sans jamais purger. Si non fourni,
-        on retombe sur le même rate_limiter que pour les bans (comportement
+        unban_rate_limiter: rate limiter dédié aux unbans, séparé de celui
+        des bans. Sans ça, les deux opérations partageaient le même
+        compteur : en cas d'attaque massive, les bans saturaient le quota et
+        les unbans expirés restaient bloqués indéfiniment, faisant grossir
+        banned_ips (et la mémoire) sans jamais purger. Si non fourni, on
+        retombe sur le même rate_limiter que pour les bans (comportement
         historique, pour compatibilité ascendante).
         """
         self.logger = logger
@@ -108,10 +108,23 @@ class BanManager:
     def _save_state(self):
         """Doit être appelée AVEC self._lock déjà acquis."""
         backup_dir = self.config['BACKUP_BANNED_IPS']
-        rotate_if_full(self.state_file, backup_dir, max_mb=10) 
+        rotate_if_full(self.state_file, backup_dir, max_mb=10)
 
-        if not self.state_file.exists():
-            self.banned_ips = {}  # Reset RAM si rotate
+        # FIX: l'ancien code faisait ici
+        #   if not self.state_file.exists():
+        #       self.banned_ips = {}
+        # ce qui videait self.banned_ips dès que le fichier n'existait pas
+        # encore sur disque -- ce qui est justement le cas au tout premier
+        # ban (le fichier n'a jamais été créé avant). Résultat : l'IP qu'on
+        # venait d'ajouter en mémoire était effacée avant même d'être écrite,
+        # et le fichier se retrouvait créé mais vide ({}), sans aucune
+        # erreur visible dans les logs.
+        # self.banned_ips est déjà la source de vérité en mémoire pendant
+        # toute la durée de vie du process (mise à jour dans ban(),
+        # extend(), _process_expired()) -> pas besoin de la réinitialiser
+        # ici, ni au premier lancement, ni après une rotation. Si
+        # rotate_if_full a bien archivé l'ancien fichier, le nouveau sera
+        # simplement recréé avec le contenu actuel de self.banned_ips.
 
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -124,7 +137,7 @@ class BanManager:
         except Exception as e:
             self.logger.critical(f"[STATE] échec écriture {self.state_file}: {e}")
 
-    # ---------- réconciliation état <-> iptables réel ----------
+   
 
     def _reconcile_state(self):
         """Vérifie, au démarrage, que chaque IP en état 'bannie' correspond
@@ -194,13 +207,13 @@ class BanManager:
             self.logger.warning(f"[RATE_LIMIT] ban de {ip} reporté (limite atteinte)")
             return "RATE_LIMITED"
 
-        rule_args = build_ban_rule_args(ip,comment,self.ban_chain)
+        rule_args = build_ban_rule_args(ip, comment, self.ban_chain)
         self.logger.critical(f"[BLOCAGE] {ip} -> {count}")
 
         if self._rule_exists(rule_args):
             # État désynchronisé : la règle existe déjà (ex: crash précédent
-            # avant écriture de l'état). On évite un -A redondant.
-            self.logger.warning(f"[BAN] règle déjà présente pour {ip}, pas de -A redondant")
+            # avant écriture de l'état). On évite un -A/-I redondant.
+            self.logger.warning(f"[BAN] règle déjà présente pour {ip}, pas de -I redondant")
         elif not self._run_iptables(rule_args, "BAN"):
             return "FAIL_BAN"
 
@@ -271,7 +284,7 @@ class BanManager:
             expired = [ip for ip, info in self.banned_ips.items() if now >= info["expires_at"]]
 
         for ip in expired:
-            # FIX: rate limiter dédié à l'unban (voir __init__) au lieu de
+            # Rate limiter dédié à l'unban (voir __init__) au lieu de
             # self.rate_limiter, pour ne pas être bloqué par une vague de bans.
             if not self.unban_rate_limiter.allow():
                 self.logger.warning(f"[RATE_LIMIT] unban de {ip} reporté (limite atteinte)")

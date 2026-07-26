@@ -14,41 +14,82 @@ import time
 from pathlib import Path
 from lib.logrotate import rotate_if_full
 
-def build_ban_rule_args(ip, comment):
-    return ["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP",
-            "-m", "comment", "--comment", comment]
+
+def build_ban_rule_args(ip, comment, chain="DOCKER-USER"):
+    return [
+        "iptables",
+        "-I",
+        chain,
+        "-s",
+        ip,
+        "-j",
+        "DROP",
+        "-m",
+        "comment",
+        "--comment",
+        comment
+    ]
 
 
 def to_unban_args(ban_rule_args):
     """Transforme la commande -A stockée en -D (même spec de règle == même match)."""
     args = ban_rule_args.copy()
-    args[args.index("-A")] = "-D"
+
+    if "-A" in args:
+        args[args.index("-A")] = "-D"
+    elif "-I" in args:
+        args[args.index("-I")] = "-D"
+
     return args
 
+
+def to_check_args(ban_rule_args):
+    """Transforme la commande -A stockée en -C (vérifie l'existence sans modifier)."""
+    args = ban_rule_args.copy()
+
+    if "-A" in args:
+        args[args.index("-A")] = "-C"
+    elif "-I" in args:
+        args[args.index("-I")] = "-C"
+
+    return args
 
 class BanManager:
     def __init__(self, logger, rate_limiter, use_sudo=True,
                  ban_duration_sec=1800, unban_check_interval_sec=30,
-                 state_file="/opt/siem/var/banned_ips.jsonl",
-                 on_event=None,config=None):
+                 state_file="/app/var/banned_ips.jsonl",
+                 on_event=None, config=None, unban_rate_limiter=None):
         """
         on_event: callback(dict) optionnel, appelé pour chaque événement
         ban/unban (ex: écrire une alerte JSONL). Doit être thread-safe si
         fourni, car appelé depuis le thread de fond.
+
+        unban_rate_limiter: rate limiter dédié aux unbans, séparé de celui
+        des bans. Sans ça, les deux opérations partageaient le même
+        compteur : en cas d'attaque massive, les bans saturaient le quota et
+        les unbans expirés restaient bloqués indéfiniment, faisant grossir
+        banned_ips (et la mémoire) sans jamais purger. Si non fourni, on
+        retombe sur le même rate_limiter que pour les bans (comportement
+        historique, pour compatibilité ascendante).
         """
         self.logger = logger
-        self.config=config
+        self.config = config
         self.rate_limiter = rate_limiter
+        self.unban_rate_limiter = unban_rate_limiter or rate_limiter
         self.use_sudo = use_sudo
         self.ban_duration_sec = ban_duration_sec
         self.unban_check_interval_sec = unban_check_interval_sec
         self.state_file = Path(state_file)
         self.on_event = on_event
-
+        self.ban_chain = config.get("BAN_CHAIN", "INPUT")
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread = None
         self.banned_ips = self._load_state()
+
+        # Purge les entrées dont la règle iptables n'existe plus réellement
+        # (ex: redémarrage machine ayant vidé iptables, mais l'état JSON survit).
+        self._reconcile_state()
 
     # ---------- persistance ----------
 
@@ -67,28 +108,77 @@ class BanManager:
     def _save_state(self):
         """Doit être appelée AVEC self._lock déjà acquis."""
         backup_dir = self.config['BACKUP_BANNED_IPS']
-        rotate_if_full(self.state_file, backup_dir, max_mb=0.0003) # <-- Force seuil test
-        
-        if not self.state_file.exists(): 
-            self.banned_ips = {} # Reset RAM si rotate
-        
+        rotate_if_full(self.state_file, backup_dir, max_mb=10)
+
+        # FIX: l'ancien code faisait ici
+        #   if not self.state_file.exists():
+        #       self.banned_ips = {}
+        # ce qui videait self.banned_ips dès que le fichier n'existait pas
+        # encore sur disque -- ce qui est justement le cas au tout premier
+        # ban (le fichier n'a jamais été créé avant). Résultat : l'IP qu'on
+        # venait d'ajouter en mémoire était effacée avant même d'être écrite,
+        # et le fichier se retrouvait créé mais vide ({}), sans aucune
+        # erreur visible dans les logs.
+        # self.banned_ips est déjà la source de vérité en mémoire pendant
+        # toute la durée de vie du process (mise à jour dans ban(),
+        # extend(), _process_expired()) -> pas besoin de la réinitialiser
+        # ici, ni au premier lancement, ni après une rotation. Si
+        # rotate_if_full a bien archivé l'ancien fichier, le nouveau sera
+        # simplement recréé avec le contenu actuel de self.banned_ips.
+
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.state_file.with_suffix(".tmp")
-            #  On copie sous lock pour éviter RuntimeError
-            data_to_dump = dict(self.banned_ips) 
+            # On copie sous lock pour éviter RuntimeError
+            data_to_dump = dict(self.banned_ips)
             with tmp.open("w") as f:
-                json.dump(data_to_dump, f, indent=2) #  Dump la copie
+                json.dump(data_to_dump, f, indent=2)  # Dump la copie
             tmp.replace(self.state_file)
         except Exception as e:
-            self.logger.critical(f"[STATE] échec écriture {self.state_file}: {e}") # <-- critical pour voir
+            self.logger.critical(f"[STATE] échec écriture {self.state_file}: {e}")
+
+   
+
+    def _reconcile_state(self):
+        """Vérifie, au démarrage, que chaque IP en état 'bannie' correspond
+        bien à une règle iptables encore présente. Purge les entrées orphelines
+        pour éviter des tentatives d'unban qui échoueront indéfiniment."""
+        stale = []
+        for ip, info in self.banned_ips.items():
+            rule_args = info.get("rule_args")
+            if not rule_args or not self._rule_exists(rule_args):
+                stale.append(ip)
+
+        if not stale:
+            return
+
+        for ip in stale:
+            self.banned_ips.pop(ip, None)
+
+        self.logger.warning(
+            f"[STATE] {len(stale)} entrée(s) obsolète(s) purgée(s) au démarrage "
+            f"(règle iptables absente): {stale}"
+        )
+        with self._lock:
+            self._save_state()
 
     # ---------- iptables ----------
+
+    def _rule_exists(self, rule_args):
+        """Vérifie via 'iptables -C' si la règle existe réellement, sans la modifier.
+        Retourne True si présente, False sinon (y compris en cas d'erreur d'exécution)."""
+        cmd = (["sudo"] if self.use_sudo else []) + to_check_args(rule_args)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            return result.returncode == 0
+        except Exception as e:
+            self.logger.error(f"[ERREUR IPTABLES:CHECK] {e}")
+            return False
 
     def _run_iptables(self, cmd_args, label):
         cmd = (["sudo"] if self.use_sudo else []) + cmd_args
         try:
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
             return True
         except Exception as e:
             self.logger.error(f"[ERREUR IPTABLES:{label}] {e}")
@@ -117,15 +207,18 @@ class BanManager:
             self.logger.warning(f"[RATE_LIMIT] ban de {ip} reporté (limite atteinte)")
             return "RATE_LIMITED"
 
-        rule_args = build_ban_rule_args(ip, comment)
+        rule_args = build_ban_rule_args(ip, comment, self.ban_chain)
         self.logger.critical(f"[BLOCAGE] {ip} -> {count}")
-        if not self._run_iptables(rule_args, "BAN"):
+
+        if self._rule_exists(rule_args):
+            # État désynchronisé : la règle existe déjà (ex: crash précédent
+            # avant écriture de l'état). On évite un -A/-I redondant.
+            self.logger.warning(f"[BAN] règle déjà présente pour {ip}, pas de -I redondant")
+        elif not self._run_iptables(rule_args, "BAN"):
             return "FAIL_BAN"
 
         now = time.time()
         with self._lock:
-            # re-check : une autre IP a pu être traitée entre-temps par le thread de fond,
-            # mais pas cette IP précise en ban (pas de unban concurrent possible ici)
             self.banned_ips[ip] = {
                 "banned_at": now,
                 "expires_at": now + self.ban_duration_sec,
@@ -169,13 +262,31 @@ class BanManager:
         while not self._stop_event.wait(self.unban_check_interval_sec):
             self._process_expired()
 
+    def _do_unban(self, ip, info):
+        """Lève le ban pour ip. Retourne True si l'IP peut être considérée
+        comme débannie (règle supprimée OU déjà absente), False sinon."""
+        rule_args = info["rule_args"]
+
+        if not self._rule_exists(rule_args):
+            # Rien à supprimer : la règle a déjà disparu (redémarrage machine,
+            # purge manuelle iptables -F, etc.). On traite comme un succès
+            # pour nettoyer l'état, sans jamais appeler iptables -D dessus.
+            self.logger.warning(
+                f"[UNBAN] {ip}: règle iptables déjà absente, nettoyage de l'état sans appel iptables"
+            )
+            return True
+
+        return self._run_iptables(to_unban_args(rule_args), "UNBAN")
+
     def _process_expired(self):
         now = time.time()
         with self._lock:
             expired = [ip for ip, info in self.banned_ips.items() if now >= info["expires_at"]]
 
         for ip in expired:
-            if not self.rate_limiter.allow():
+            # Rate limiter dédié à l'unban (voir __init__) au lieu de
+            # self.rate_limiter, pour ne pas être bloqué par une vague de bans.
+            if not self.unban_rate_limiter.allow():
                 self.logger.warning(f"[RATE_LIMIT] unban de {ip} reporté (limite atteinte)")
                 continue
 
@@ -184,7 +295,7 @@ class BanManager:
             if info is None:
                 continue  # déjà débanni entre-temps (ex: extend concurrent)
 
-            ok = self._run_iptables(to_unban_args(info["rule_args"]), "UNBAN")
+            ok = self._do_unban(ip, info)
             if ok:
                 with self._lock:
                     self.banned_ips.pop(ip, None)

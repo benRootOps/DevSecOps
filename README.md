@@ -19,7 +19,7 @@ L’idée : Passer de zéro à "embauchable" avec un portfolio AWS + Sécurité 
 3.  **Déployer et sécuriser** des applications sur Kubernetes EKS
 4.  **Présenter 3 projets prod-ready** sur GitHub pour mon portfolio
 
-**Période** : 26 juin 2026 →  8 Août 2026
+**Période** : 13 juillet 2026 →  7 Septembre 2026
 
 ---
 

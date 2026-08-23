@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment #donne le type (ici un gestionnaire de pods)
+metadata:
+  name: backend #le nom du deployment (une sorte d'ID)
+spec: #ici on met des config voulue
+  replicas: 2 #je demande 2 replique du backend
+  selector:
+    matchLabels:
+      app: backend #ici je dis que ce deployment gère les pods qui on le label :backend
+  template: #le modele du pod sois comment créer chaque pods
+    metadata:
+      labels: #ici on relis deployement et service et organiser les pods
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: cloud-issam-backend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000

@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: DaemonSet
+
+metadata:
+  name: siem-web
+  labels:
+    app: siem-web
+
+spec:
+  selector:
+    matchLabels:
+      app: siem-web
+
+  template:
+    metadata:
+      labels:
+        app: siem-web
+
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+
+      containers:
+        - name: siem-web
+
+          image: cloud-issam-siem-web:latest
+          imagePullPolicy: Never
+          securityContext:
+            privileged: true
+
+          command:
+            - python3
+            - /app/bin/siem.py
+            - --config
+            - /app/etc/config_web.yaml
+
+          volumeMounts:
+            # Logs OpenResty
+            - name: openresty-logs
+              mountPath: /logs/openresty
+              readOnly: true
+
+            # Configuration SIEM
+            - name: siem-config
+              mountPath: /app/etc
+              readOnly: true
+
+            # Etat / backups SIEM
+            - name: siem-data
+              mountPath: /app/var
+
+      volumes:
+        - name: openresty-logs
+          persistentVolumeClaim:
+            claimName: openresty-logs-pvc
+
+        - name: siem-config
+          configMap:
+            name: siem-config
+
+        - name: siem-data
+          persistentVolumeClaim:
+            claimName: siem-data-pvc

@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: openresty
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: openresty
+
+  template:
+    metadata:
+      labels:
+        app: openresty
+
+    spec:
+      containers:
+        - name: openresty
+          image: cloud-issam-openresty:latest
+          imagePullPolicy: Never
+
+          ports:
+            - containerPort: 80
+
+          volumeMounts:
+            - name: openresty-logs
+              mountPath: /var/log/nginx
+
+      volumes:
+        - name: openresty-logs
+          persistentVolumeClaim:
+            claimName: openresty-logs-pvc

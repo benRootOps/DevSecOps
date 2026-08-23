@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: DaemonSet
+
+metadata:
+  name: siem-ssh
+  labels:
+    app: siem-ssh
+
+spec:
+  selector:
+    matchLabels:
+      app: siem-ssh
+
+  template:
+    metadata:
+      labels:
+        app: siem-ssh
+
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+
+      containers:
+        - name: siem-ssh
+
+          image: cloud-issam-siem-ssh:latest
+          imagePullPolicy: Never
+
+          securityContext:
+            privileged: true
+
+          command:
+            - python3
+            - /app/bin/siem.py
+            - --config
+            - /app/etc/config_ssh.yaml
+
+          volumeMounts:
+            - name: ssh-logs
+              mountPath: /logs/auth
+              readOnly: true
+
+            - name: siem-config
+              mountPath: /app/etc
+              readOnly: true
+
+            - name: siem-data
+              mountPath: /app/var
+
+      volumes:
+        - name: ssh-logs
+          persistentVolumeClaim:
+            claimName: ssh-logs-pvc
+
+        - name: siem-config
+          configMap:
+            name: siem-config
+
+        - name: siem-data
+          persistentVolumeClaim:
+            claimName: siem-data-pvc

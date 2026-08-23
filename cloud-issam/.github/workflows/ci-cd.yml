@@ -1,0 +1,103 @@
+name: Cloud ISSAM
+
+on:
+  push:
+    branches: ["dev", "main"]
+
+jobs:
+  ci:
+    name: Security Scan + Build Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Scan des secrets
+      - name: Scan secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Scan Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Scan Python security (Bandit)
+        run: |
+          pip install bandit
+          bandit -r backend/ siem/ -ll -f screen
+
+      # Scan React / Node
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Scan React dependencies (npm audit)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --audit-level=critical
+
+      # Build Docker
+      - name: Build Docker images
+        run: docker compose build
+
+      # Scan images Docker
+      - name: Scan Backend image (Trivy)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: cloud-issam-backend:latest
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+
+      - name: Scan Backend image (Trivy)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: cloud-issam-backend:latest
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # Test de démarrage
+      - name: Test application startup
+        run: |
+          docker compose up -d
+          sleep 20
+          docker compose ps
+          docker compose logs --tail=100
+
+      # Nettoyage
+      - name: Shutdown containers
+        if: always()
+        run: docker compose down
+
+  # JOB 2 : CD = Deploy. Tourne UNIQUEMENT pour main
+  # cd:
+  #   name: Deploy Prod
+  #   needs: ci # Attend que CI soit OK
+  #   if: github.ref == 'refs/heads/main' # verifie ci le push c'est fait sur la branch main
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+
+  #     - name: Deploy sur le serveur Prod
+  #       uses: appleboy/ssh-action@v1.0.3
+  #       with:
+  #         host: ${{ secrets.HOST }}
+  #         username: ${{ secrets.USER }}
+  #         key: ${{ secrets.SSH_KEY }}
+  #         script: |
+  #           cd ~/DevSecOps/cloud-issam
+  #           git pull origin main
+  #           docker compose up -d --build
+  #           docker image prune -f

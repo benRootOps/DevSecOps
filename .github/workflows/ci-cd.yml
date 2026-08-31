@@ -1,0 +1,104 @@
+name: univora
+
+on:
+  push:
+    branches: ["main", "dev"]
+  # pull_request:
+  #   branches: ["main", "dev"]
+
+jobs:
+  ci:
+    name: Security Scan + Build Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 1. SCAN DES SECRETS
+      - name: Scan secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. SCAN LARAVEL api
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: composer:v2
+
+      - name: Install Laravel dependencies
+        working-directory: api
+        run: composer install --no-progress --prefer-dist --no-interaction
+
+      - name: Laravel Security Audit (composer)
+        working-directory: api
+        run: composer audit
+
+      - name: Laravel Static Analysis (PHPStan)
+        working-directory: api
+        run: |
+          composer require --dev phpstan/phpstan
+          vendor/bin/phpstan analyse --level=5 app
+
+      # 3. SCAN REACT / NODE
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install React dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Scan React dependencies (npm audit)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      - name: React Build Test
+        working-directory: frontend
+        run: npm run build
+
+      # 4. BUILD DOCKER
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker images
+        run: docker compose build
+
+      # 5. SCAN IMAGES DOCKER AVEC TRIVY
+      - name: Scan api image (Trivy)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: univora-api:latest
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Scan Frontend image (Trivy)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: univora-frontend:latest
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      # 6. TEST DE DÉMARRAGE
+      - name: Test application startup
+        run: |
+          docker compose up -d
+          sleep 30
+          docker compose ps
+          docker compose logs --tail=100
+
+      # 7. NETTOYAGE
+      - name: Shutdown containers
+        if: always()
+        run: docker compose down -v

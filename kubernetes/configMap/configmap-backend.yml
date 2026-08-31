@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: univora
+data:
+  APP_URL: "http://10.0.2.15"
+  APP_ENV: "production"
+  FRONTEND_URL: "http://10.0.2.15"
+  DB_DATABASE: "univora"
+  DB_HOST: mariadb-external
+  DB_PORT: "3306"

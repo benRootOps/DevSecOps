@@ -1,0 +1,29 @@
+services:
+  api:
+    image: localhost:5000/univora-api:latest
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    # PAS DE VOLUMES en prod
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./api/.env # tes secrets restent hors image
+    command: php artisan serve --host=0.0.0.0 --port=8000 --no-reload
+    networks:
+      - appnet
+
+  frontend:
+    image: localhost:5000/univora-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://api:8000
+    networks:
+      - appnet
+
+networks:
+  appnet:

@@ -1,0 +1,12 @@
+# 1. Installe pre-commit une fois
+pip install pre-commit
+
+# 2. Installe les hooks dans ton projet
+pre-commit install
+pre-commit install --hook-type pre-push
+
+# 3. Test que tout marche
+pre-commit run --all-files
+
+# 4. Lance à la main si tu veux
+pre-commit run gitleaks --all-files

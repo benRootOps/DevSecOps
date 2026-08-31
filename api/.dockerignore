@@ -1,0 +1,25 @@
+
+.env
+.env.backup
+.env.production
+.phpunit.result.cached
+ Homestead.json
+ Homestead.yaml
+ auth.json
+ npm-debug.log
+ yarn-error.log
+ # node_modules/
+ public/hot
+ public/storage
+ storage/*.key
+ storage/framework/cache/*
+ storage/framework/sessions/*
+ storage/framework/views/*
+ storage/logs/*
+ vendor/
+ .git/
+ .gitignore
+ .idea/
+ .vscode/
+ docker-compose.yml
+ docker-compose.override.yml

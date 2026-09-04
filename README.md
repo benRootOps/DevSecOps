@@ -1,4 +1,4 @@
-9DevSecOps 56 Days Challenge
+DevSecOps 56 Days Challenge is finish
 
 **Objectif : Devenir Junior DevSecOps Engineer en 8 semaines | 4h/j, 7j/7**
 
